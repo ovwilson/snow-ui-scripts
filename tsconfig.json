@@ -1,10 +1,10 @@
 {
     "compilerOptions": {
-        "module": "System",
+        "module": "commonjs",
         "noImplicitAny": true,
         "moduleResolution": "node",
         "sourceMap": false,
-        "outFile": "dist/index.js",
+        "outDir": "dist",
         "baseUrl": "./",
         "typeRoots": [
             "node_modules/@types"
