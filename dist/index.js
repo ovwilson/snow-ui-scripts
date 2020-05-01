@@ -16,12 +16,13 @@ var options = {
     fileUri: '{{sys_id}}/file',
     limit: 'sysparm_limit=10',
     files: [
-        { name: 'runtime-es5.js%20', defer: true, module: false },
-        { name: 'runtime-es2015.js%20', defer: false, module: true },
-        { name: 'polyfills-es5.js%20', defer: true, module: false },
-        { name: 'polyfills-es2015.js%20', defer: false, module: true },
-        { name: 'main-es5.js%20', defer: true, module: false },
-        { name: 'main-es2015.js%20', defer: false, module: true }
+        { name: 'runtime-es5.js', type: 'js', defer: true, module: false },
+        { name: 'runtime-es2015.js', type: 'js', defer: false, module: true },
+        { name: 'polyfills-es5.js', type: 'js', defer: true, module: false },
+        { name: 'polyfills-es2015.js', type: 'js', defer: false, module: true },
+        { name: 'main-es5.js', type: 'js', defer: true, module: false },
+        { name: 'main-es2015.js', type: 'js', defer: false, module: true },
+        { name: 'styles.css', type: 'css' }
     ]
 };
 var SNOW = /** @class */ (function () {
@@ -44,7 +45,18 @@ var SNOW = /** @class */ (function () {
         var _this = this;
         files.map(function (file) { return _this.request(_this.setContentUri(file), _this.token())
             .then(function (xhr) { _this.onSuccess(xhr); return xhr; })
-            .then(function (xhr) { return _this.setScriptTag(xhr, file); })["catch"](function (xhr) { return _this.onError(xhr); }); });
+            .then(function (xhr) { return _this.findContentType(xhr, file); })["catch"](function (xhr) { return _this.onError(xhr); }); });
+    };
+    SNOW.prototype.findContentType = function (xhr, file) {
+        switch (file.type) {
+            case 'js':
+                this.setScriptTag(xhr, file);
+                break;
+            case 'css':
+                this.setStyleTag(xhr);
+                break;
+            default: break;
+        }
     };
     SNOW.prototype.setScriptTag = function (xhr, file) {
         var body, newScript, inlineScript;
@@ -61,12 +73,20 @@ var SNOW = /** @class */ (function () {
         newScript.appendChild(inlineScript);
         body.appendChild(newScript);
     };
+    SNOW.prototype.setStyleTag = function (xhr) {
+        /* Create style document */
+        var css = document.createElement('style');
+        css.type = 'text/css';
+        css.appendChild(document.createTextNode(xhr.responseText));
+        /* Append style to the tag name */
+        document.getElementsByTagName('head')[0].appendChild(css);
+    };
     SNOW.prototype.transformFiles = function (files, data) {
         var _this = this;
         return files.map(function (file) { return _this.filterByFileName(file, data); });
     };
     SNOW.prototype.filterByFileName = function (file, data) {
-        var filteredFile = data.filter(function (d) { return d.file_name + '%20' === file.name; })[0];
+        var filteredFile = data.filter(function (d) { return d.file_name === file.name; })[0];
         return (__assign(__assign({}, file), { sys_id: filteredFile.sys_id }));
     };
     SNOW.prototype.request = function (url, token) {

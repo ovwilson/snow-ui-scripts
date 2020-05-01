@@ -1,7 +1,8 @@
 interface FileSchema {
     name: string;
-    defer: boolean;
-    module: boolean;
+    type: 'js' | 'css';
+    defer?: boolean;
+    module?: boolean;
     sys_id?: string;
 }
 
@@ -30,12 +31,13 @@ const options: SNOWOptions = {
     fileUri: '{{sys_id}}/file',
     limit: 'sysparm_limit=10',
     files: [
-        { name: 'runtime-es5.js%20', defer: true, module: false },
-        { name: 'runtime-es2015.js%20', defer: false, module: true },
-        { name: 'polyfills-es5.js%20', defer: true, module: false },
-        { name: 'polyfills-es2015.js%20', defer: false, module: true },
-        { name: 'main-es5.js%20', defer: true, module: false },
-        { name: 'main-es2015.js%20', defer: false, module: true }
+        { name: 'runtime-es5.js', type: 'js', defer: true, module: false },
+        { name: 'runtime-es2015.js', type: 'js', defer: false, module: true },
+        { name: 'polyfills-es5.js', type: 'js', defer: true, module: false },
+        { name: 'polyfills-es2015.js', type: 'js', defer: false, module: true },
+        { name: 'main-es5.js', type: 'js', defer: true, module: false },
+        { name: 'main-es2015.js', type: 'js', defer: false, module: true },
+        { name: 'styles.css', type: 'css', }
     ]
 }
 
@@ -67,9 +69,17 @@ class SNOW {
     getContent(files: FileSchema[]): void {
         files.map(file => this.request(this.setContentUri(file), this.token())
             .then((xhr: XMLHttpRequest) => { this.onSuccess(xhr); return xhr; })
-            .then((xhr: XMLHttpRequest) => this.setScriptTag(xhr, file))
+            .then((xhr: XMLHttpRequest) => this.findContentType(xhr, file))
             .catch((xhr: XMLHttpRequest) => this.onError(xhr))
         )
+    }
+
+    findContentType(xhr: XMLHttpRequest, file: FileSchema) {
+        switch (file.type) {
+            case 'js': this.setScriptTag(xhr,file); break;
+            case 'css': this.setStyleTag(xhr); break;
+            default: break;
+        }
     }
 
     setScriptTag(xhr: XMLHttpRequest, file: FileSchema): void {
@@ -83,10 +93,19 @@ class SNOW {
         body.appendChild(newScript);
     }
 
+    setStyleTag(xhr: XMLHttpRequest) {
+        /* Create style document */
+        let css = document.createElement('style');
+        css.type = 'text/css';
+        css.appendChild(document.createTextNode(xhr.responseText));
+        /* Append style to the tag name */
+        document.getElementsByTagName('head')[0].appendChild(css);
+    }
+
     transformFiles(files: FileSchema[], data: FileMetaData[]): FileSchema[] { return files.map(file => this.filterByFileName(file, data)); }
 
     filterByFileName(file: any, data: FileMetaData[]) {
-        let filteredFile = data.filter(d => d.file_name + '%20' === file.name)[0];
+        let filteredFile = data.filter(d => d.file_name === file.name)[0];
         return ({ ...file, sys_id: filteredFile.sys_id });
     }
 
