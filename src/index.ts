@@ -1,4 +1,39 @@
-interface FileSchema {
+
+interface SnowBase {
+    sys_id: string;
+    title?: string;
+    name?: string;
+    description?: string;
+    short_description?: string;
+    category?: string;
+    environment?: 'development' | 'test' | 'production';
+    sys_updated_on: Date;
+    sys_created_on: Date;
+    sys_updated_by: string;
+    sys_created_by: string;
+}
+
+interface Prop extends SnowBase {
+    resource_table: string;
+    ssr_sys_id: string;
+    ssr_uri: string;
+    ssr_file_uri: string;
+    ssr_query: string;
+    ssr_limit: number;
+}
+
+
+// export interface ResourceMetaData extends SnowBase {
+//     size_bytes?: number;
+//     table_name: string;
+//     table_sys_id: string;
+//     content_type: string;
+//     defer: boolean;
+//     module: boolean;
+// }
+
+
+interface Resource {
     name: string;
     type: 'js' | 'css';
     defer?: boolean;
@@ -6,7 +41,7 @@ interface FileSchema {
     sys_id?: string;
 }
 
-interface FileMetaData {
+interface ResourceMetaData {
     size_bytes: string;
     file_name: string;
     table_name: string;
@@ -15,74 +50,96 @@ interface FileMetaData {
     content_type: string;
 }
 
-interface SNOWOptions {
+interface Options {
     tableSysId: string;
     uri: string;
     query: string;
     fileUri: string;
-    limit: string;
-    files: FileSchema[];
+    limit: number;
+    resource_table: string;
+    resources: Resource[];
 }
 
-const options: SNOWOptions = {
-    tableSysId: 'a01b1d83dba30010629a5385ca961957',
-    uri: '/api/now/attachment',
-    query: 'sysparm_query=table_sys_idSTARTSWITH',
-    fileUri: '{{sys_id}}/file',
-    limit: 'sysparm_limit=10',
-    files: [
-        { name: 'runtime-es5.js', type: 'js', defer: true, module: false },
-        { name: 'runtime-es2015.js', type: 'js', defer: false, module: true },
-        { name: 'polyfills-es5.js', type: 'js', defer: true, module: false },
-        { name: 'polyfills-es2015.js', type: 'js', defer: false, module: true },
-        { name: 'main-es5.js', type: 'js', defer: true, module: false },
-        { name: 'main-es2015.js', type: 'js', defer: false, module: true },
-        { name: 'styles.css', type: 'css', }
-    ]
-}
 
-class SNOW {
+class Resources {
 
     private token = () => (window as any).g_ck || '';
-    private options: SNOWOptions;
+    private cs = document.currentScript;
+    private uri: string = this.cs.getAttribute('data-uri');
+    private scope: string = this.cs.getAttribute('data-scope');
+    private category: string = this.cs.getAttribute('data-category');
+    private env: string = this.cs.getAttribute('data-env');
+    private properties_table = this.cs.getAttribute('data-table-props');
+    private resources_table = this.cs.getAttribute('data-table-resources');
+    private query = `sysparm_query=scope=${this.scope}^environment=${this.env}^category=${this.category}`;
+    private properties_limit = `sysparm_limit=1`;
+    private options: Options;
 
-    constructor(options: SNOWOptions) {
+    constructor() {
 
-        this.options = options;
-
-        this.request(this.getMetaDataUri(), this.token())
+        this.request(this.getUri('properties', null), this.token())
+            .then((xhr: XMLHttpRequest) => { this.onSuccess(xhr); return xhr; })
+            .then((xhr: XMLHttpRequest) => this.setOptions(xhr))
+            .then(() => this.request(this.getUri('resources', null), this.token()))
+            .then((xhr: XMLHttpRequest) => { this.onSuccess(xhr); return xhr; })
+            .then((xhr: XMLHttpRequest) => this.setResources(xhr))
+            .then(() => this.request(this.getUri('scripted_rest_api', null), this.token()))
             .then((xhr: XMLHttpRequest) => { this.onSuccess(xhr); return xhr; })
             .then((xhr: XMLHttpRequest) => this.setSysIds(xhr))
-            .then((transformedFiles: FileSchema[]) => this.getContent(transformedFiles))
+            .then((transformedFiles: Resource[]) => this.getContent(transformedFiles))
             .catch((xhr: XMLHttpRequest) => this.onError(xhr));
     }
 
-    getMetaDataUri(): string { return `${this.options.uri}?${this.options.query}${this.options.tableSysId}&${this.options.limit}`; }
-
-    setContentUri(file: FileSchema): string { return `${this.options.uri}/${this.options.fileUri.replace('{{sys_id}}', file.sys_id)}`; }
-
-    setSysIds(xhr: XMLHttpRequest): FileSchema[] {
-        let data: FileMetaData[] = JSON.parse(xhr.response).result;
-        return this.transformFiles(this.options.files, data);
+    getUri(name: 'properties' | 'resources' | 'scripted_rest_api' | 'file', file: Resource | null) {
+        switch (name) {
+            case 'properties': return `${this.uri}/${this.scope}_${this.properties_table}?${this.query}&${this.properties_limit}`; break;
+            case 'resources': return `${this.uri}/${this.scope}_${this.resources_table}?${this.query}`; break;
+            case 'scripted_rest_api': return `${this.options.uri}?${this.options.query}${this.options.tableSysId}&sysparm_limit=${this.options.limit}`; break;
+            case 'file': return `${this.options.uri}/${this.options.fileUri.replace('{{sys_id}}', file.sys_id)}`; break;
+            default: return null; break;
+        }
     }
 
-    getContent(files: FileSchema[]): void {
-        files.map(file => this.request(this.setContentUri(file), this.token())
+    setOptions(xhr: XMLHttpRequest) {
+        let data: Prop = JSON.parse(xhr.response).result[0];
+        this.options = ({
+            tableSysId: data.ssr_sys_id,
+            uri: data.ssr_uri,
+            fileUri: data.ssr_file_uri,
+            query: data.ssr_query,
+            limit: data.ssr_limit,
+            resource_table: data.resource_table,
+            resources: []
+        });
+    }
+
+    setResources(xhr: XMLHttpRequest) {
+        let data: Resource[] = JSON.parse(xhr.response).result;
+        this.options = ({ ...this.options, resources: data });
+    }
+
+    setSysIds(xhr: XMLHttpRequest): Resource[] {
+        let data: ResourceMetaData[] = JSON.parse(xhr.response).result;
+        return this.transformFiles(this.options.resources, data);
+    }
+
+    getContent(files: Resource[]): void {
+        files.map(file => this.request(this.getUri('file', file), this.token())
             .then((xhr: XMLHttpRequest) => { this.onSuccess(xhr); return xhr; })
             .then((xhr: XMLHttpRequest) => this.findContentType(xhr, file))
             .catch((xhr: XMLHttpRequest) => this.onError(xhr))
         )
     }
 
-    findContentType(xhr: XMLHttpRequest, file: FileSchema) {
+    findContentType(xhr: XMLHttpRequest, file: Resource) {
         switch (file.type) {
-            case 'js': this.setScriptTag(xhr,file); break;
+            case 'js': this.setScriptTag(xhr, file); break;
             case 'css': this.setStyleTag(xhr); break;
             default: break;
         }
     }
 
-    setScriptTag(xhr: XMLHttpRequest, file: FileSchema): void {
+    setScriptTag(xhr: XMLHttpRequest, file: Resource): void {
         let body, newScript, inlineScript;
         body = document.getElementsByTagName('body')[0];
         newScript = document.createElement("script");
@@ -102,9 +159,9 @@ class SNOW {
         document.getElementsByTagName('head')[0].appendChild(css);
     }
 
-    transformFiles(files: FileSchema[], data: FileMetaData[]): FileSchema[] { return files.map(file => this.filterByFileName(file, data)); }
+    transformFiles(files: Resource[], data: ResourceMetaData[]): Resource[] { return files.map(file => this.filterByFileName(file, data)); }
 
-    filterByFileName(file: any, data: FileMetaData[]) {
+    filterByFileName(file: any, data: ResourceMetaData[]) {
         let filteredFile = data.filter(d => d.file_name === file.name)[0];
         return ({ ...file, sys_id: filteredFile.sys_id });
     }
@@ -129,4 +186,4 @@ class SNOW {
     onError(xhr: XMLHttpRequest): void { console.error(`Error: ${xhr.status} - ${xhr.statusText}`, JSON.parse(xhr.responseText)); }
 }
 
-new SNOW(options);
+new Resources();
